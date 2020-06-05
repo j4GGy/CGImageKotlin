@@ -1,0 +1,2 @@
+include ':image'
+rootProject.name = "CGImageKotlin"

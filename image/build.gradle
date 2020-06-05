@@ -1,0 +1,60 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+
+plugins {
+    id 'kotlin-multiplatform'
+}
+
+version = "1.0.0"
+final frameworkName = "image"
+
+kotlin {
+
+    // configure iOS
+    def sdkName = System.getenv("SDK_NAME")
+    def iphoneNotSimulator = (sdkName != null && sdkName.startsWith("iphoneos"))
+    KotlinNativeTarget target = iphoneNotSimulator? iosArm64("ios") : iosX64("ios")
+
+    target
+    sourceSets.iosMain.dependencies {
+        implementation "org.jetbrains.kotlin:kotlin-stdlib"
+    }
+
+    final compilerArgs = new ArrayList()
+    compilerArgs.add("-Xobjc-generics")
+
+    target.compilations.main.kotlinOptions.freeCompilerArgs = compilerArgs
+
+    target.binaries.framework(frameworkName) {
+        // sets the internal Obj-C prefix for all classes
+        // this will not be visible in Swift directly but if one looks at
+        // the definition in the Header files, i.e. ASTClock, ASLocalDate, etc.
+        freeCompilerArgs += ["-module-name", "AS"]
+    }
+}
+
+// generates library ("framework") to be imported and used in iOS (via XCode)
+task packForXCode(type: Sync) {
+
+    final File frameworkDir = new File(buildDir, "xcode-frameworks")
+    final String mode = project.findProperty("XCODE_CONFIGURATION")?.toUpperCase() ?: 'DEBUG'
+    final def framework = kotlin.targets.ios.binaries.getFramework(frameworkName, mode)
+
+    println("Mode: " + mode)
+    println("Target: " + kotlin.targets.ios.class.getSimpleName())
+
+    inputs.property "mode", mode
+    dependsOn framework.linkTask
+
+    from { framework.outputFile.parentFile }
+    into frameworkDir
+
+    doLast {
+        new File(frameworkDir, 'gradlew').with {
+            text = "#!/bin/bash\nexport 'JAVA_HOME=${System.getProperty("java.home")}'\ncd '${rootProject.rootDir}'\nchmod +x gradlew\n./gradlew \$@\n"
+            setExecutable(true)
+        }
+    }
+}
+
+// Run packForXCode when building.
+tasks.build.dependsOn packForXCode
